@@ -1,6 +1,40 @@
-function tcx2csv {# Fitness Tracking: Extract data from TCX files, calculate step count, and export to CSV.
+function tcx2csv ([switch]$help) {# Fitness Tracking: Extract data from TCX files, calculate step count, and export to CSV.
 
 $currentDir = (Get-Location).Path; $outputCsvFilePath = Join-Path $currentDir "NewRuns.csv"; $stepData = @(); $tcxFiles = Get-ChildItem -Path $currentDir -Filter "*.tcx"
+
+# Modify fields sent to it with proper word wrapping.
+function wordwrap ($field, $maximumlinelength) {if ($null -eq $field) {return $null}
+$breakchars = ',.;?!\/ '; $wrapped = @()
+if (-not $maximumlinelength) {[int]$maximumlinelength = (100, $Host.UI.RawUI.WindowSize.Width | Measure-Object -Maximum).Maximum}
+if ($maximumlinelength -lt 60) {[int]$maximumlinelength = 60}
+if ($maximumlinelength -gt $Host.UI.RawUI.BufferSize.Width) {[int]$maximumlinelength = $Host.UI.RawUI.BufferSize.Width}
+foreach ($line in $field -split "`n", [System.StringSplitOptions]::None) {if ($line -eq "") {$wrapped += ""; continue}
+$remaining = $line
+while ($remaining.Length -gt $maximumlinelength) {$segment = $remaining.Substring(0, $maximumlinelength); $breakIndex = -1
+foreach ($char in $breakchars.ToCharArray()) {$index = $segment.LastIndexOf($char)
+if ($index -gt $breakIndex) {$breakIndex = $index}}
+if ($breakIndex -lt 0) {$breakIndex = $maximumlinelength - 1}
+$chunk = $segment.Substring(0, $breakIndex + 1); $wrapped += $chunk; $remaining = $remaining.Substring($breakIndex + 1)}
+if ($remaining.Length -gt 0 -or $line -eq "") {$wrapped += $remaining}}
+return ($wrapped -join "`n")}
+
+if ($help) {# Inline help.
+function scripthelp ($section) {# (Internal) Generate the help sections from the comments section of the script.
+""; Write-Host -f yellow ("-" * 100); $pattern = "(?ims)^## ($section.*?)(##|\z)"; $match = [regex]::Match($scripthelp, $pattern); $lines = $match.Groups[1].Value.TrimEnd() -split "`r?`n", 2; Write-Host $lines[0] -f yellow; Write-Host -f yellow ("-" * 100)
+if ($lines.Count -gt 1) {wordwrap $lines[1] 100| Out-String | Out-Host -Paging}; Write-Host -f yellow ("-" * 100)}
+$scripthelp = Get-Content -Raw -Path $PSCommandPath; $sections = [regex]::Matches($scripthelp, "(?im)^## (.+?)(?=\r?\n)")
+if ($sections.Count -eq 1) {cls; Write-Host "$([System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)) Help:" -f cyan; scripthelp $sections[0].Groups[1].Value; ""; return}
+
+$selection = $null
+do {cls; Write-Host "$([System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)) Help Sections:`n" -f cyan; for ($i = 0; $i -lt $sections.Count; $i++) {
+"{0}: {1}" -f ($i + 1), $sections[$i].Groups[1].Value}
+if ($selection) {scripthelp $sections[$selection - 1].Groups[1].Value}
+$input = Read-Host "`nEnter a section number to view"
+if ($input -match '^\d+$') {$index = [int]$input
+if ($index -ge 1 -and $index -le $sections.Count) {$selection = $index}
+else {$selection = $null}} else {""; return}}
+while ($true); return}
+
 
 # Loop through each TCX file in the directory.
 if (-not $tcxFiles) {Write-Host -f red "`nNo TCX files found in the current directory.`n"; return}
@@ -45,7 +79,8 @@ Export-ModuleMember -Function tcx2csv
 <#
 ## TCX2CSV
 
-Download a TCX file from a service such as Strava and run this script in that directory, to parse the important parts to a CSV file, ready to import into my custom run tracker.
+Download a TCX file from a service such as Strava and run this script in that directory, in order to parse the important parts of it into a CSV file.
+There are no options required.
 ## License
 MIT License
 
