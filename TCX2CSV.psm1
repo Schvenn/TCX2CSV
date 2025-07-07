@@ -3,7 +3,7 @@ function tcx2csv {# Fitness Tracking: Extract data from TCX files, calculate ste
 $currentDir = (Get-Location).Path; $outputCsvFilePath = Join-Path $currentDir "NewRuns.csv"; $stepData = @(); $tcxFiles = Get-ChildItem -Path $currentDir -Filter "*.tcx"
 
 # Loop through each TCX file in the directory.
-if (-not $tcxFiles) {Write-Host -ForegroundColor Red "`nNo TCX files found in the current directory.`n"; return}
+if (-not $tcxFiles) {Write-Host -f red "`nNo TCX files found in the current directory.`n"; return}
 foreach ($tcxFile in $tcxFiles) {[xml]$tcxData = Get-Content -Path $tcxFile.FullName; $namespace = "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"; $nsManager = New-Object System.Xml.XmlNamespaceManager($tcxData.NameTable); $nsManager.AddNamespace("ns", $namespace); $activities = $tcxData.DocumentElement.SelectNodes("//ns:Activities/ns:Activity", $nsManager)
 
 # Define format and pull data.
@@ -37,5 +37,35 @@ $sortedData = $mergedData | Sort-Object "Date & Time" -Unique
 $sortedData | Select-Object "Date & Time", "Activity", "Steps", "Kilometers", "h", "m", "s", "Average Pulse", "Maximum HR", "Reported Calories" | Export-Csv -Path $outputCsvFilePath -NoTypeInformation
 
 # Confirm file contents and display it.
-Write-Host -ForegroundColor Cyan "`n$outputCsvFilePath contains $($sortedData.Count) entries."
+Write-Host -f cyan "`n$outputCsvFilePath contains $($sortedData.Count) entries."
 Import-Csv $outputCsvFilePath | Format-Table -AutoSize}
+
+Export-ModuleMember -Function tcx2csv
+
+<#
+## TCX2CSV
+
+Download a TCX file from a service such as Strava and run this script in that directory, to parse the important parts to a CSV file, ready to import into my custom run tracker.
+## License
+MIT License
+
+Copyright © 2025 Craig Plath
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+copies of the Software, and to permit persons to whom the Software is 
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in 
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+THE SOFTWARE.
+##>
