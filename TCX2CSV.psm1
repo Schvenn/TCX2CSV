@@ -77,7 +77,7 @@ $_.PSObject.Properties.Remove("LapStartTime"); $_.PSObject.Properties.Remove("Di
 $mergedData = $existingData + $stepData
 $dedupDict = @{}; $dedupedData = foreach ($entry in $mergedData) {$key = @("$($entry.'Date & Time')", "$($entry.Activity)", "$($entry.Steps)", "$($entry.Kilometers)", "$($entry.h)", "$($entry.m)", "$($entry.s)", "$($entry.'Average Pulse')", "$($entry.'Maximum HR')", "$($entry.'Reported Calories')") -join '|'
 if (-not $dedupDict.ContainsKey($key)) {$dedupDict[$key] = $true; $entry}}
-$sortedData = $mergedData | Sort-Object "Date & Time" -Unique
+$sortedData = $dedupedData | Sort-Object { [datetime]$_.'Date & Time' }
 $sortedData | Select-Object "Date & Time", "Activity", "Steps", "Kilometers", "h", "m", "s", "Average Pulse", "Maximum HR", "Reported Calories" | Export-Csv -Path $outputCsvFilePath -NoTypeInformation
 
 # Confirm file contents and display it.
