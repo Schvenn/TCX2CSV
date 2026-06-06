@@ -8,4 +8,4 @@ to parse the important parts of it into a CSV file.
 
 usage: GPX2CSV <weight in kg>
 
-You do not need to provide a weight, but if you do not, the script will use the default provided in the accompanying PSD1 file.
+You do not need to provide a weight in KG, but if you do not, the script will use the default provided in the accompanying PSD1 file. For those of you who do not know the metric system, divide your weight in pounds (lbs) by 2.2 to get your metric equivalent in kilograms.
