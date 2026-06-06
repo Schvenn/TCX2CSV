@@ -1,6 +1,16 @@
-function tcx2csv ([switch]$help) {# Fitness Tracking: Extract data from TCX files, calculate step count, and export to CSV.
+function gpx2csv ([int]$Weight, [switch]$help) {# Fitness Tracking: Extract data from GPX files, calculate step count, and export to CSV.
 
-$currentDir = (Get-Location).Path; $outputCsvFilePath = Join-Path $currentDir "NewRuns.csv"; $stepData = @(); $tcxFiles = Get-ChildItem -Path $currentDir -Filter "*.tcx"
+$currentDir = (Get-Location).Path; $outputCsvFilePath = Join-Path $currentDir "NewRuns.csv"; $stepData = @(); $gpxFiles = Get-ChildItem -Path $currentDir -Filter "*.gpx"
+
+# Load configuration.
+function loadconfiguration {$script:powershell = Split-Path $profile; $script:baseModulePath = "$powershell\Modules\GPX2CSV"; $script:configPath = Join-Path $baseModulePath "GPX2CSV.psd1"
+if (!(Test-Path $configPath)) {throw "Config file not found at $configPath"}
+$script:config = Import-PowerShellDataFile -Path $configPath
+
+# Pull config values into variables
+$script:weight = $config.privatedata.weight}
+loadconfiguration
+if ($weight) {$script:weight = $weight}
 
 # Modify fields sent to it with proper word wrapping.
 function wordwrap ($field, $maximumlinelength) {if ($null -eq $field) {return $null}
@@ -35,7 +45,7 @@ $scripthelp = Get-Content -Raw -Path $PSCommandPath; $sections = [regex]::Matche
 if ($sections.Count -eq 1) {cls; Write-Host "$([System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)) Help:" -f cyan; scripthelp $sections[0].Groups[1].Value; ""; return}
 
 $selection = $null
-do {cls; Write-Host "$(Get-ChildItem (Split-Path $PSCommandPath) | Where-Object { $_.FullName -ieq $PSCommandPath } | Select-Object -ExpandProperty BaseName) Help Sections:`n" -f cyan; for ($i = 0; $i -lt $sections.Count; $i++) {Write-Host "$($i + 1). " -f cyan -n; Write-Host $sections[$i].Groups[1].Value -f white}
+do {cls; Write-Host "$(Get-ChildItem (Split-Path $PSCommandPath) | Where-Object {$_.FullName -ieq $PSCommandPath} | Select-Object -ExpandProperty BaseName) Help Sections:`n" -f cyan; for ($i = 0; $i -lt $sections.Count; $i++) {Write-Host "$($i + 1). " -f cyan -n; Write-Host $sections[$i].Groups[1].Value -f white}
 if ($selection) {scripthelp $sections[$selection - 1].Groups[1].Value}
 Write-Host -f yellow "`nEnter a section number to view " -n; $input = Read-Host
 if ($input -match '^\d+$') {$index = [int]$input
@@ -46,25 +56,42 @@ while ($true); return}
 # External call to help.
 if ($help) {help; return}
 
-# Loop through each TCX file in the directory.
-if (-not $tcxFiles) {Write-Host -f red "`nNo TCX files found in the current directory.`n"; return}
-foreach ($tcxFile in $tcxFiles) {[xml]$tcxData = Get-Content -Path $tcxFile.FullName; $namespace = "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"; $nsManager = New-Object System.Xml.XmlNamespaceManager($tcxData.NameTable); $nsManager.AddNamespace("ns", $namespace); $activities = $tcxData.DocumentElement.SelectNodes("//ns:Activities/ns:Activity", $nsManager)
+# Calculate distance
+function Get-DistanceMeters ($lat1, $lon1, $lat2, $lon2) {$R = 6371000; $dLat = ($lat2 - $lat1) * [math]::PI / 180; $dLon = ($lon2 - $lon1) * [math]::PI / 180; $a = [math]::Sin($dLat/2) * [math]::Sin($dLat/2) + [math]::Cos($lat1 * [math]::PI / 180) * [math]::Cos($lat2 * [math]::PI / 180) * [math]::Sin($dLon/2) * [math]::Sin($dLon/2); $c = 2 * [math]::Atan2([math]::Sqrt($a), [math]::Sqrt(1-$a)); return $R * $c}
 
-# Define format and pull data.
-foreach ($activity in $activities) {$laps = $activity.SelectNodes("ns:Lap", $nsManager); $sport = if ($activity.Attributes["Sport"].Value -eq "Running") { "Run" } else { $activity.Attributes["Sport"].Value }
-foreach ($lap in $laps) {$track = $lap.SelectSingleNode("ns:Track", $nsManager); $trackpoints = $track.SelectNodes("ns:Trackpoint", $nsManager); $lapStartTimeString = $lap.StartTime; if ($lapStartTimeString -eq $null) { continue }
-$utcDateTime = [datetime]::ParseExact($lapStartTimeString, "yyyy-MM-ddTHH:mm:ssZ", $null); $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Eastern Standard Time"); $etDateTime = [System.TimeZoneInfo]::ConvertTime($utcDateTime, $timeZone); $lapTotalTime = $lap.TotalTimeSeconds; $lapDistance = $lap.DistanceMeters; $lapAverageHeartRateBpm = $lap.AverageHeartRateBpm.value; $lapCalories = [int]$lap.Calories
+# Loop through each relevant file in the directory and calculate measurements.
+if (-not $gpxFiles) {Write-Host -f red "`nNo GPX files found in the current directory.`n"; return}
+foreach ($gpxFile in $gpxFiles) {[xml]$gpx = Get-Content $gpxFile.FullName; $ns = New-Object System.Xml.XmlNamespaceManager($gpx.NameTable); $ns.AddNamespace("gpx", "http://www.topografix.com/GPX/1/1"); $ns.AddNamespace("gpxtpx", "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"); $tracks = $gpx.DocumentElement.SelectNodes("gpx:trk", $ns)
+foreach ($track in $tracks) {$trackName = $track.name; $points = $track.SelectNodes(".//gpx:trkpt", $ns)
+if ($points.Count -lt 2) {continue}
+$startTime = [datetime]::Parse($points[0].time); $endTime = [datetime]::Parse($points[$points.Count - 1].time); $totalSeconds = ($endTime - $startTime).TotalSeconds
+if ($totalSeconds -lt 60) {continue}
+$latPrev = $null; $lonPrev = $null; $totalDistance = 0; $cadenceSum = 0; $cadenceCount = 0; $hrValues = @()
+foreach ($p in $points) {$lat = [double]$p.Attributes["lat"].Value; $lon = [double]$p.Attributes["lon"].Value
+if ($latPrev -ne $null) {$totalDistance += Get-DistanceMeters $latPrev $lonPrev $lat $lon}
+$latPrev = $lat; $lonPrev = $lon; $hrNode = $p.SelectSingleNode("gpx:extensions/gpxtpx:TrackPointExtension/gpxtpx:hr", $ns); $cadNode = $p.SelectSingleNode("gpx:extensions/gpxtpx:TrackPointExtension/gpxtpx:cad", $ns)
+if ($hrNode -and $hrNode.InnerText -match '^\d+$') {$hrValues += [int]$hrNode.InnerText}
+if ($cadNode -and $cadNode.InnerText -match '^\d+$') {$cadenceSum += [int]$cadNode.InnerText; $cadenceCount++}}
+$avgHR = if ($hrValues.Count) {[math]::Round(($hrValues | Measure-Object -Average).Average)}
+else {0}
+$avgCadence = if ($cadenceCount) {$cadenceSum / $cadenceCount}
+else {0}
+if ($avgCadence -gt 0) {$approxStepCount = [math]::Round($avgCadence * $totalSeconds / 60)}
+else {$approxStepCount = [math]::Round(1.25 * $totalSeconds)}
+if ($totalSeconds -lt 60) {continue}
 
-# Acquire MaxHeartRateBpm.
-$maxHeartRate = $trackpoints | ForEach-Object {if ($_.HeartRateBpm.value -match '^\d+$') { [int]$_.HeartRateBpm.value } else { $null }} | Sort-Object -Descending | Select-Object -First 1
-
-# Estimate steps.
-$cadenceSum = 0; $cadenceCount = 0; foreach ($trackpoint in $trackpoints) {$cadence = $trackpoint.Cadence; $cadenceSum += $cadence; $cadenceCount++}
-$approxStepCount = [math]::Round($cadenceSum / $cadenceCount * $lap.TotalTimeSeconds / 30); $approxStepCount = [int]($approxStepCount)
-if ($approxStepCount -lt 1000) { continue }
-
-# Redefine field formats.
-$stepDataObject = [PSCustomObject]@{LapStartTime = $etDateTime.ToString("M/d/yyyy h:mm:ss tt"); Activity = $sport; Steps = $approxStepCount; Distance = [math]::Round($lapDistance / 1000, 2); Hours = ([int][math]::Floor($lapTotalTime / 3600)); Minutes = ([int][math]::Floor(($lapTotalTime % 3600) / 60)); Seconds = ([int]($lapTotalTime % 60)); AverageHeartRate = $lapAverageHeartRateBpm; MaxHeartRate = $maxHeartRate; Calories = $lapCalories}; $stepData += $stepDataObject}}}
+$stepData += [PSCustomObject]@{LapStartTime = $startTime
+Activity = "Run"
+Steps = $approxStepCount
+Distance = [math]::Round($totalDistance / 1000, 2)
+Hours = [int][math]::Floor($totalSeconds / 3600)
+Minutes = [int][math]::Floor(($totalSeconds % 3600) / 60)
+Seconds = [int]($totalSeconds % 60)
+AverageHeartRate = $avgHR
+MaxHeartRate = if ($hrValues.Count) {($hrValues | Measure-Object -Maximum).Maximum}
+else {0}
+Calories = if ($script:weight) {[math]::Round(9.8 * $script:weight * ($totalSeconds / 3600))}
+else {0}}}}
 
 # Merge data.
 $existingData = @(); if (Test-Path $outputCsvFilePath) {$existingData = @((Import-Csv -Path $outputCsvFilePath))}
@@ -73,23 +100,31 @@ $stepData | ForEach-Object {$_ | Add-Member -MemberType NoteProperty -Name "Date
 # Remove old fields.
 $_.PSObject.Properties.Remove("LapStartTime"); $_.PSObject.Properties.Remove("Distance"); $_.PSObject.Properties.Remove("Hours"); $_.PSObject.Properties.Remove("Minutes"); $_.PSObject.Properties.Remove("Seconds"); $_.PSObject.Properties.Remove("AverageHeartRate"); $_.PSObject.Properties.Remove("MaxHeartRate"); $_.PSObject.Properties.Remove("Calories")}
 
-# Merge, deduplicate, sort and export data.
-$mergedData = $existingData + $stepData
-$dedupDict = @{}; $dedupedData = foreach ($entry in $mergedData) {$key = @("$($entry.'Date & Time')", "$($entry.Activity)", "$($entry.Steps)", "$($entry.Kilometers)", "$($entry.h)", "$($entry.m)", "$($entry.s)", "$($entry.'Average Pulse')", "$($entry.'Maximum HR')", "$($entry.'Reported Calories')") -join '|'
-if (-not $dedupDict.ContainsKey($key)) {$dedupDict[$key] = $true; $entry}}
-$sortedData = $dedupedData | Sort-Object { [datetime]$_.'Date & Time' }
-$sortedData | Select-Object "Date & Time", "Activity", "Steps", "Kilometers", "h", "m", "s", "Average Pulse", "Maximum HR", "Reported Calories" | Export-Csv -Path $outputCsvFilePath -NoTypeInformation
+# Load existing
+$seen = @{}
+$newUnique = foreach ($entry in $stepData) {$k = "$($entry.'Date & Time')|$($entry.Activity)"
+if (-not $seen.ContainsKey($k)) {$seen[$k] = $true; $entry}}
+
+# Final dataset = old + new unique
+$final = $existingData + $newUnique
+$sortedData = $final | Where-Object {$_.'Date & Time' -and $_.'Date & Time' -ne ''} | Sort-Object {[datetime]::Parse($_.'Date & Time')}
+$sortedData | Select-Object "Date & Time","Activity","Steps","Kilometers","h","m","s","Average Pulse","Maximum HR","Reported Calories" -unique | Export-Csv -Path $outputCsvFilePath -NoTypeInformation
 
 # Confirm file contents and display it.
 Write-Host -f cyan "`n$outputCsvFilePath contains $($sortedData.Count) entries."
-Import-Csv $outputCsvFilePath | Format-Table -AutoSize}
+Import-Csv $outputCsvFilePath | Format-Table -AutoSize
+if ($gpxFiles) {Recycle "*.gpx"}
+./NewRuns.csv}
 
-Export-ModuleMember -Function tcx2csv
+Export-ModuleMember -Function gpx2csv
 
 <#
-## TCX2CSV
-Download a TCX file from a service such as Strava and run this script in that directory, in order to parse the important parts of it into a CSV file.
-There are no options required.
+## GPX2CSV
+Download a GPX file from a service such as Strava and run this script in that directory, in order to parse the important parts of it into a CSV file.
+
+usage: GPX2CSV <weight in kg>
+
+You do not need to provide a weight, but if you do not, the script will use the default provided in the accompanying PSD1 file.
 ## License
 MIT License
 
