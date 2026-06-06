@@ -13,8 +13,8 @@ AliasesToExport = @()
 FileList = @('GPX2CSV.psm1')
 
 PrivateData = @{PSData = @{Tags = @('csv', 'export', 'fitness', 'import', 'json', 'powershell')
-LicenseUri = 'https://github.com/Schvenn/GPX2CSV/blob/main/LICENSE'
-ProjectUri = 'https://github.com/Schvenn/GPX2CSV'
-ReleaseNotes = 'Initial release.'}
+LicenseUri = 'https://github.com/Schvenn/TCX2CSV/blob/GPX2CSV/LICENSE'
+ProjectUri = 'https://github.com/Schvenn/TCX2CSV/tree/GPX2CSV'
+ReleaseNotes = 'Switched to converting GPX files, instead of TCX.'}
 
 weight = 94}}
