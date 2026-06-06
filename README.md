@@ -1,3 +1,6 @@
+# RETIRED
+This version is no longer being actively developed, since Strava no longer supports TCX files. If you need it, it still works. However, I have a GPX version instead, as a branch of this repository, which will support GPX conversions; a much more broadly accepted format.
+
 # TCX2CSV
 Powershell module to convert the basic fitness information from TCX JSON files to CSV for import into other trackers.
 
