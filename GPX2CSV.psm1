@@ -124,7 +124,7 @@ Download a GPX file from a service such as Strava and run this script in that di
 
 usage: GPX2CSV <weight in kg>
 
-You do not need to provide a weight, but if you do not, the script will use the default provided in the accompanying PSD1 file.
+You do not need to provide a weight, but if you do not, the script will use the default provided in the accompanying PSD1 file. For those of you who do not know the metric system, divide your weight in pounds (lbs) by 2.2 to get your metric equivalent in kilograms.
 ## License
 MIT License
 
